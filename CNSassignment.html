@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>Cryptography Tool</title>
+  <style>
+    body {
+      font-family: Arial;
+      background: #0f172a;
+      color: white;
+      text-align: center;
+      padding: 20px;
+    }
+
+```
+h1 { color: #38bdf8; }
+
+select, input, textarea, button {
+  margin: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  width: 250px;
+}
+
+textarea { height: 80px; }
+
+button {
+  background: #22c55e;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover { background: #16a34a; }
+
+.box {
+  background: #1e293b;
+  padding: 20px;
+  border-radius: 12px;
+  display: inline-block;
+  margin-top: 20px;
+}
+
+#rootsBox {
+  margin-top: 10px;
+  font-size: 14px;
+  color: #94a3b8;
+}
+```
+
+  </style>
+</head>
+
+<body>
+
+<h1>Cryptography Tool</h1>
+
+<select id="method">
+  <option value="playfair">Playfair Cipher</option>
+  <option value="row">Row Transposition</option>
+  <option value="dh">Diffie-Hellman</option>
+</select>
+
+<div class="box">
+
+  <textarea id="text" placeholder="Enter Text"></textarea><br>
+
+<input type="text" id="key" placeholder="Enter Key"><br>
+
+  <!-- Diffie-Hellman Inputs -->
+
+  <div id="dhInputs" style="display:none;">
+    <input type="number" id="p" placeholder="Prime (p)" oninput="updateRoots()"><br>
+
+```
+<select id="g">
+  <option>Select Base (g)</option>
+</select><br>
+
+<div id="rootsBox"></div>
+
+<input type="number" id="a" placeholder="Private Key A">
+<input type="number" id="b" placeholder="Private Key B">
+```
+
+  </div>
+
+  <br>
+
+<button onclick="encrypt()">Encrypt / Generate</button> <button onclick="decrypt()">Decrypt</button>
+
+  <h3 id="output"></h3>
+
+</div>
+
+<script>
+
+let lastOutput = "";
+
+document.getElementById("method").addEventListener("change", function() {
+  let m = this.value;
+
+  document.getElementById("dhInputs").style.display = (m === "dh") ? "block" : "none";
+  document.getElementById("text").style.display = (m === "dh") ? "none" : "block";
+  document.getElementById("key").style.display = (m === "dh") ? "none" : "block";
+});
+
+/* ---------------- PLAYFAIR ---------------- */
+function generateMatrix(key) {
+  key = key.toUpperCase().replace(/J/g, "I");
+  let matrix = [];
+  let used = {};
+
+  key += "ABCDEFGHIKLMNOPQRSTUVWXYZ";
+
+  for (let char of key) {
+    if (!used[char]) {
+      matrix.push(char);
+      used[char] = true;
+    }
+  }
+
+  return matrix;
+}
+
+function findPos(matrix, ch) {
+  let idx = matrix.indexOf(ch);
+  return [Math.floor(idx / 5), idx % 5];
+}
+
+function prepareText(text) {
+  text = text.toUpperCase().replace(/J/g, "I").replace(/[^A-Z]/g, "");
+  let result = "";
+
+  for (let i = 0; i < text.length; i++) {
+    let a = text[i];
+    let b = text[i + 1];
+
+    if (a === b) {
+      result += a + "X";
+    } else if (b) {
+      result += a + b;
+      i++;
+    } else {
+      result += a + "X";
+    }
+  }
+
+  return result;
+}
+
+function playfairEncrypt(text, key) {
+  let matrix = generateMatrix(key);
+  text = prepareText(text);
+
+  let result = "";
+
+  for (let i = 0; i < text.length; i += 2) {
+    let a = text[i];
+    let b = text[i + 1];
+
+    let [r1, c1] = findPos(matrix, a);
+    let [r2, c2] = findPos(matrix, b);
+
+    if (r1 === r2) {
+      result += matrix[r1 * 5 + (c1 + 1) % 5];
+      result += matrix[r2 * 5 + (c2 + 1) % 5];
+    } else if (c1 === c2) {
+      result += matrix[((r1 + 1) % 5) * 5 + c1];
+      result += matrix[((r2 + 1) % 5) * 5 + c2];
+    } else {
+      result += matrix[r1 * 5 + c2];
+      result += matrix[r2 * 5 + c1];
+    }
+  }
+
+  return result;
+}
+
+function playfairDecrypt(text, key) {
+  if (!text || text.length % 2 !== 0) return "Invalid Cipher";
+
+  let matrix = generateMatrix(key);
+  text = text.toUpperCase();
+
+  let result = "";
+
+  for (let i = 0; i < text.length; i += 2) {
+    let a = text[i];
+    let b = text[i + 1];
+
+    let [r1, c1] = findPos(matrix, a);
+    let [r2, c2] = findPos(matrix, b);
+
+    if (r1 === r2) {
+      result += matrix[r1 * 5 + (c1 + 4) % 5];
+      result += matrix[r2 * 5 + (c2 + 4) % 5];
+    } else if (c1 === c2) {
+      result += matrix[((r1 + 4) % 5) * 5 + c1];
+      result += matrix[((r2 + 4) % 5) * 5 + c2];
+    } else {
+      result += matrix[r1 * 5 + c2];
+      result += matrix[r2 * 5 + c1];
+    }
+  }
+
+  return result;
+}
+
+/* ---------------- ROW TRANSPOSITION ---------------- */
+function getOrder(key) {
+  return key.split('')
+    .map((v, i) => ({v, i}))
+    .sort((a, b) => a.v.localeCompare(b.v) || a.i - b.i);
+}
+
+function rowEncrypt(text, key) {
+  let cols = key.length;
+  let rows = Math.ceil(text.length / cols);
+  let grid = [];
+  let k = 0;
+
+  for (let i = 0; i < rows; i++) {
+    grid[i] = [];
+    for (let j = 0; j < cols; j++) {
+      grid[i][j] = text[k++] || "X";
+    }
+  }
+
+  let order = getOrder(key);
+  let result = "";
+
+  for (let obj of order) {
+    for (let j = 0; j < rows; j++) {
+      result += grid[j][obj.i];
+    }
+  }
+
+  return result;
+}
+
+function rowDecrypt(text, key) {
+  let cols = key.length;
+  let rows = Math.ceil(text.length / cols);
+  let grid = Array.from({ length: rows }, () => Array(cols));
+
+  let order = getOrder(key);
+  let k = 0;
+
+  for (let obj of order) {
+    for (let j = 0; j < rows; j++) {
+      grid[j][obj.i] = text[k++];
+    }
+  }
+
+  return grid.map(row => row.join("")).join("");
+}
+
+/* ---------------- DIFFIE HELLMAN ---------------- */
+
+function powerMod(base, exp, mod) {
+  let result = 1;
+  base %= mod;
+
+  while (exp > 0) {
+    if (exp % 2 === 1) result = (result * base) % mod;
+    base = (base * base) % mod;
+    exp = Math.floor(exp / 2);
+  }
+
+  return result;
+}
+
+function isPrimitiveRoot(g, p) {
+  let set = new Set();
+  for (let i = 1; i < p; i++) {
+    set.add(powerMod(g, i, p));
+  }
+  return set.size === p - 1;
+}
+
+function findPrimitiveRoots(p) {
+  let roots = [];
+  for (let g = 2; g < p; g++) {
+    if (isPrimitiveRoot(g, p)) roots.push(g);
+  }
+  return roots;
+}
+
+function updateRoots() {
+  let p = +document.getElementById("p").value;
+  let gSelect = document.getElementById("g");
+  let rootsBox = document.getElementById("rootsBox");
+
+  gSelect.innerHTML = "<option>Select Base (g)</option>";
+  rootsBox.innerHTML = "";
+
+  if (!p || p < 3) return;
+
+  let roots = findPrimitiveRoots(p);
+
+  for (let r of roots) {
+    let option = document.createElement("option");
+    option.value = r;
+    option.text = r;
+    gSelect.appendChild(option);
+  }
+
+  rootsBox.innerText = "Possible g values: " + roots.join(", ");
+}
+
+function diffieHellman(p, g, a, b) {
+  let A = powerMod(g, a, p);
+  let B = powerMod(g, b, p);
+  let key = powerMod(B, a, p);
+
+  return `Public Keys → A=${A}, B=${B}
+Shared Key → ${key}`;
+}
+
+/* ---------------- MAIN ---------------- */
+
+function encrypt() {
+  let method = document.getElementById("method").value;
+  let text = document.getElementById("text").value;
+  let key = document.getElementById("key").value;
+
+  let output = "";
+
+  if (method === "playfair") {
+    output = playfairEncrypt(text, key);
+  } else if (method === "row") {
+    output = rowEncrypt(text, key);
+  } else {
+    let p = +document.getElementById("p").value;
+    let g = +document.getElementById("g").value;
+    let a = +document.getElementById("a").value;
+    let b = +document.getElementById("b").value;
+
+    if (!p || !g || !a || !b) {
+      output = "Fill all Diffie-Hellman fields!";
+    } else {
+      output = diffieHellman(p, g, a, b);
+    }
+  }
+
+  lastOutput = output;
+  document.getElementById("output").innerText = output;
+}
+
+function decrypt() {
+  let method = document.getElementById("method").value;
+  let key = document.getElementById("key").value;
+
+  if (!lastOutput) {
+    document.getElementById("output").innerText = "Encrypt first!";
+    return;
+  }
+
+  let output = "";
+
+  if (method === "playfair") {
+    output = playfairDecrypt(lastOutput, key);
+  } else if (method === "row") {
+    output = rowDecrypt(lastOutput, key);
+  } else {
+    output = "Diffie-Hellman has NO decryption";
+  }
+
+  document.getElementById("output").innerText = output;
+}
+
+</script>
+
+</body>
+</html>
